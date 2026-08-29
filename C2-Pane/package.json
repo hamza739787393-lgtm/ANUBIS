@@ -1,0 +1,16 @@
+{
+  "name": "anubis-c2-panel",
+  "version": "1.0.0",
+  "description": "ANUBIS-X C2 Control Panel",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "npm install"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mysql2": "^3.6.0",
+    "express-session": "^1.17.3",
+    "body-parser": "^1.20.2"
+  }
+}
